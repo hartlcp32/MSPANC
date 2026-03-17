@@ -33,7 +33,7 @@ ADULTS = 1
 SEAT = "economy"
 CURRENCY = "USD"
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent / "docs" / "data"
 CSV_FILE = DATA_DIR / "price_history.csv"
 
 # ============================================================

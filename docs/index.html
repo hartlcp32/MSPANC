@@ -114,8 +114,7 @@
     </div>
 
     <script>
-        const BASE = window.location.hostname === 'localhost' || window.location.hostname === ''
-            ? '.' : '..';
+        const BASE = '.';
 
         async function loadCSV(url) {
             const res = await fetch(url);
