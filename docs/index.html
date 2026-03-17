@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MSP - ANC Flight Price Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { color: #38bdf8; margin-bottom: 4px; font-size: 1.8em; }
+        .subtitle { color: #94a3b8; margin-bottom: 20px; font-size: 0.95em; }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #334155;
+        }
+        .card .label { color: #94a3b8; font-size: 0.85em; margin-bottom: 4px; }
+        .card .value { font-size: 2em; font-weight: 700; color: #38bdf8; }
+        .card .detail { color: #64748b; font-size: 0.8em; margin-top: 4px; }
+        .card.highlight .value { color: #4ade80; }
+        .card.warn .value { color: #fb923c; }
+        .price-label {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .price-label.low { background: #166534; color: #4ade80; }
+        .price-label.typical { background: #854d0e; color: #fbbf24; }
+        .price-label.high { background: #991b1b; color: #fca5a5; }
+        .chart-container {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #334155;
+            margin-bottom: 24px;
+        }
+        .chart-container h2 { color: #e2e8f0; font-size: 1.1em; margin-bottom: 12px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1e293b;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        th { background: #334155; color: #94a3b8; padding: 12px; text-align: left; font-size: 0.85em; }
+        td { padding: 10px 12px; border-top: 1px solid #1e293b; font-size: 0.9em; }
+        tr:nth-child(even) { background: #1e293b; }
+        tr:nth-child(odd) { background: #0f172a; }
+        .loading { text-align: center; padding: 40px; color: #64748b; }
+        #error { color: #f87171; padding: 20px; display: none; }
+        .section-title { color: #e2e8f0; font-size: 1.2em; margin: 24px 0 12px 0; }
+    </style>
+</head>
+<body>
+    <h1>MSP - ANC Flight Tracker</h1>
+    <p class="subtitle">Minneapolis to Anchorage | Jul 11 - Jul 17, 2026 | Economy</p>
+
+    <div id="error"></div>
+
+    <div class="cards" id="summary-cards">
+        <div class="loading">Loading price data...</div>
+    </div>
+
+    <div class="chart-container">
+        <h2>Price History (Our Tracking)</h2>
+        <canvas id="trackingChart" height="100"></canvas>
+    </div>
+
+    <div class="chart-container">
+        <h2>Google's Embedded Price History (~60 days)</h2>
+        <canvas id="googleChart" height="100"></canvas>
+    </div>
+
+    <h2 class="section-title">Tracking Log</h2>
+    <div style="overflow-x: auto;">
+        <table id="history-table">
+            <thead>
+                <tr>
+                    <th>Timestamp (UTC)</th>
+                    <th>Outbound $</th>
+                    <th>Label</th>
+                    <th>Return $</th>
+                    <th>Label</th>
+                    <th>RT Total</th>
+                    <th>Out Airline</th>
+                    <th>Ret Airline</th>
+                    <th>Nonstop Out</th>
+                    <th>Nonstop Ret</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                <tr><td colspan="10" class="loading">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const BASE = window.location.hostname === 'localhost' || window.location.hostname === ''
+            ? '.' : '..';
+
+        async function loadCSV(url) {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Failed to load ' + url);
+            const text = await res.text();
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',');
+            return lines.slice(1).map(line => {
+                const vals = [];
+                let inQuote = false, current = '';
+                for (const ch of line) {
+                    if (ch === '"') { inQuote = !inQuote; }
+                    else if (ch === ',' && !inQuote) { vals.push(current); current = ''; }
+                    else { current += ch; }
+                }
+                vals.push(current);
+                const obj = {};
+                headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+                return obj;
+            });
+        }
+
+        function labelClass(label) {
+            const l = (label || '').toLowerCase();
+            if (l === 'low') return 'low';
+            if (l === 'high') return 'high';
+            return 'typical';
+        }
+
+        async function main() {
+            try {
+                // Load tracking history
+                const history = await loadCSV(BASE + '/data/price_history.csv');
+
+                if (history.length === 0) {
+                    document.getElementById('summary-cards').innerHTML = '<div class="card"><div class="label">No data yet</div><div class="detail">Waiting for first tracking run</div></div>';
+                    return;
+                }
+
+                const latest = history[history.length - 1];
+                const outPrice = parseInt(latest.out_cheapest_price) || 0;
+                const inPrice = parseInt(latest.in_cheapest_price) || 0;
+                const rtTotal = parseInt(latest.roundtrip_cheapest_total) || (outPrice + inPrice);
+                const allTotals = history.map(r => parseInt(r.roundtrip_cheapest_total) || 0).filter(x => x > 0);
+                const minTotal = allTotals.length ? Math.min(...allTotals) : rtTotal;
+
+                document.getElementById('summary-cards').innerHTML = `
+                    <div class="card highlight">
+                        <div class="label">Best Round-Trip</div>
+                        <div class="value">$${rtTotal}</div>
+                        <div class="detail">${latest.out_cheapest_airline} + ${latest.in_cheapest_airline}</div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Outbound (Jul 11)</div>
+                        <div class="value">$${outPrice}</div>
+                        <div class="detail"><span class="price-label ${labelClass(latest.out_price_label)}">${latest.out_price_label || '?'}</span> ${latest.out_cheapest_airline}</div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Return (Jul 17)</div>
+                        <div class="value">$${inPrice}</div>
+                        <div class="detail"><span class="price-label ${labelClass(latest.in_price_label)}">${latest.in_price_label || '?'}</span> ${latest.in_cheapest_airline}</div>
+                    </div>
+                    <div class="card ${rtTotal <= minTotal ? 'highlight' : 'warn'}">
+                        <div class="label">All-Time Low RT</div>
+                        <div class="value">$${minTotal}</div>
+                        <div class="detail">${rtTotal <= minTotal ? 'Current = lowest!' : 'Current is $' + (rtTotal - minTotal) + ' above'}</div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Nonstop RT</div>
+                        <div class="value">${latest.out_cheapest_nonstop && latest.in_cheapest_nonstop ? '$' + (parseInt(latest.out_cheapest_nonstop) + parseInt(latest.in_cheapest_nonstop)) : 'N/A'}</div>
+                        <div class="detail">${latest.out_nonstop_airline || ''} + ${latest.in_nonstop_airline || ''}</div>
+                    </div>
+                    <div class="card">
+                        <div class="label">Last Updated</div>
+                        <div class="value" style="font-size:1em">${latest.timestamp}</div>
+                        <div class="detail">${history.length} data points</div>
+                    </div>
+                `;
+
+                // Tracking chart
+                if (history.length >= 2) {
+                    new Chart(document.getElementById('trackingChart'), {
+                        type: 'line',
+                        data: {
+                            labels: history.map(r => r.timestamp.split(' ')[0]),
+                            datasets: [
+                                {
+                                    label: 'Round-Trip Total',
+                                    data: history.map(r => parseInt(r.roundtrip_cheapest_total) || null),
+                                    borderColor: '#38bdf8',
+                                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                    fill: true,
+                                    tension: 0.3,
+                                },
+                                {
+                                    label: 'Outbound',
+                                    data: history.map(r => parseInt(r.out_cheapest_price) || null),
+                                    borderColor: '#4ade80',
+                                    tension: 0.3,
+                                },
+                                {
+                                    label: 'Return',
+                                    data: history.map(r => parseInt(r.in_cheapest_price) || null),
+                                    borderColor: '#fb923c',
+                                    tension: 0.3,
+                                },
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: { legend: { labels: { color: '#94a3b8' } } },
+                            scales: {
+                                x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                                y: { ticks: { color: '#64748b', callback: v => '$' + v }, grid: { color: '#1e293b' } }
+                            }
+                        }
+                    });
+                }
+
+                // History table
+                const tbody = document.getElementById('history-body');
+                tbody.innerHTML = history.reverse().map(r => `
+                    <tr>
+                        <td>${r.timestamp}</td>
+                        <td>$${r.out_cheapest_price}</td>
+                        <td><span class="price-label ${labelClass(r.out_price_label)}">${r.out_price_label || ''}</span></td>
+                        <td>$${r.in_cheapest_price}</td>
+                        <td><span class="price-label ${labelClass(r.in_price_label)}">${r.in_price_label || ''}</span></td>
+                        <td>$${r.roundtrip_cheapest_total}</td>
+                        <td>${r.out_cheapest_airline}</td>
+                        <td>${r.in_cheapest_airline}</td>
+                        <td>${r.out_cheapest_nonstop ? '$' + r.out_cheapest_nonstop : '-'}</td>
+                        <td>${r.in_cheapest_nonstop ? '$' + r.in_cheapest_nonstop : '-'}</td>
+                    </tr>
+                `).join('');
+
+                // Google history charts
+                try {
+                    const [outGoogle, inGoogle] = await Promise.all([
+                        loadCSV(BASE + '/data/google_history_outbound.csv').catch(() => []),
+                        loadCSV(BASE + '/data/google_history_return.csv').catch(() => []),
+                    ]);
+
+                    if (outGoogle.length || inGoogle.length) {
+                        new Chart(document.getElementById('googleChart'), {
+                            type: 'line',
+                            data: {
+                                labels: (outGoogle.length ? outGoogle : inGoogle).map(r => r.date),
+                                datasets: [
+                                    ...(outGoogle.length ? [{
+                                        label: 'MSP->ANC (Jul 11)',
+                                        data: outGoogle.map(r => parseInt(r.cheapest_price)),
+                                        borderColor: '#4ade80',
+                                        tension: 0.3,
+                                    }] : []),
+                                    ...(inGoogle.length ? [{
+                                        label: 'ANC->MSP (Jul 17)',
+                                        data: inGoogle.map(r => parseInt(r.cheapest_price)),
+                                        borderColor: '#fb923c',
+                                        tension: 0.3,
+                                    }] : []),
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: { legend: { labels: { color: '#94a3b8' } } },
+                                scales: {
+                                    x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                                    y: { ticks: { color: '#64748b', callback: v => '$' + v }, grid: { color: '#1e293b' } }
+                                }
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.log('No Google history yet:', e);
+                }
+
+            } catch (err) {
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = 'Error loading data: ' + err.message;
+                console.error(err);
+            }
+        }
+
+        main();
+    </script>
+</body>
+</html>

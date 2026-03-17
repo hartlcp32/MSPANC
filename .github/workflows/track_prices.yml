@@ -1,0 +1,37 @@
+name: Track Flight Prices
+
+on:
+  schedule:
+    # Runs every 6 hours: midnight, 6am, noon, 6pm UTC
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run flight tracker
+        run: python track_flights.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Price update $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
