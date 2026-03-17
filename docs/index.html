@@ -259,30 +259,77 @@
                     ]);
 
                     if (outGoogle.length || inGoogle.length) {
+                        // Build aligned date labels from whichever has more data
+                        const allDates = [...new Set([
+                            ...outGoogle.map(r => r.date),
+                            ...inGoogle.map(r => r.date),
+                        ])].sort();
+
+                        // Create lookup maps
+                        const outMap = {};
+                        outGoogle.forEach(r => outMap[r.date] = parseInt(r.cheapest_price));
+                        const inMap = {};
+                        inGoogle.forEach(r => inMap[r.date] = parseInt(r.cheapest_price));
+
+                        // Compute round-trip sum where both legs have data
+                        const rtData = allDates.map(d => {
+                            if (outMap[d] !== undefined && inMap[d] !== undefined) {
+                                return outMap[d] + inMap[d];
+                            }
+                            return null;
+                        });
+
                         new Chart(document.getElementById('googleChart'), {
                             type: 'line',
                             data: {
-                                labels: (outGoogle.length ? outGoogle : inGoogle).map(r => r.date),
+                                labels: allDates,
                                 datasets: [
-                                    ...(outGoogle.length ? [{
-                                        label: 'MSP->ANC (Jul 11)',
-                                        data: outGoogle.map(r => parseInt(r.cheapest_price)),
-                                        borderColor: '#4ade80',
+                                    {
+                                        label: 'Round-Trip Total',
+                                        data: rtData,
+                                        borderColor: '#38bdf8',
+                                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                                        fill: true,
+                                        borderWidth: 2.5,
                                         tension: 0.3,
+                                        pointRadius: 2,
+                                        order: 0,
+                                    },
+                                    ...(outGoogle.length ? [{
+                                        label: 'MSP \u2192 ANC (Jul 11)',
+                                        data: allDates.map(d => outMap[d] !== undefined ? outMap[d] : null),
+                                        borderColor: '#4ade80',
+                                        borderWidth: 2,
+                                        tension: 0.3,
+                                        pointRadius: 1.5,
+                                        order: 1,
                                     }] : []),
                                     ...(inGoogle.length ? [{
-                                        label: 'ANC->MSP (Jul 17)',
-                                        data: inGoogle.map(r => parseInt(r.cheapest_price)),
+                                        label: 'ANC \u2192 MSP (Jul 17)',
+                                        data: allDates.map(d => inMap[d] !== undefined ? inMap[d] : null),
                                         borderColor: '#fb923c',
+                                        borderWidth: 2,
                                         tension: 0.3,
+                                        pointRadius: 1.5,
+                                        order: 2,
                                     }] : []),
                                 ]
                             },
                             options: {
                                 responsive: true,
-                                plugins: { legend: { labels: { color: '#94a3b8' } } },
+                                plugins: {
+                                    legend: {
+                                        labels: {
+                                            color: '#94a3b8',
+                                            padding: 20,
+                                            usePointStyle: true,
+                                            pointStyle: 'circle',
+                                            font: { size: 13 },
+                                        },
+                                    },
+                                },
                                 scales: {
-                                    x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+                                    x: { ticks: { color: '#64748b', maxTicksLimit: 15 }, grid: { color: '#1e293b' } },
                                     y: { ticks: { color: '#64748b', callback: v => '$' + v }, grid: { color: '#1e293b' } }
                                 }
                             }
