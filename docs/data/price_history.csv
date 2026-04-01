@@ -56,3 +56,4 @@ timestamp,depart_date,return_date,out_cheapest_price,out_cheapest_airline,out_ch
 2026-03-31 12:43:05,2026-07-11,2026-07-17,247,Alaska,1,13,high,334,Alaska,1,7,high,581,491,Delta,456,Alaska
 2026-03-31 18:41:30,2026-07-11,2026-07-17,247,Alaska,1,13,high,334,Alaska,1,7,high,581,491,Delta,456,Alaska
 2026-04-01 01:12:19,2026-07-11,2026-07-17,247,Alaska,1,11,high,334,Alaska,1,7,high,581,491,Delta,456,Alaska
+2026-04-01 07:05:21,2026-07-11,2026-07-17,247,Alaska,1,8,high,334,Alaska,1,6,high,581,491,Delta,660,Delta
